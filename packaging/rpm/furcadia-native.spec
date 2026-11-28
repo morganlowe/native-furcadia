@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           furcadia-native
-Version:        2.2.4
+Version:        2.2.5
 Release:        1%{?dist}
 Summary:        Native Furcadia client (GUI and CLI)
 License:        CC-BY-NC-SA-4.0

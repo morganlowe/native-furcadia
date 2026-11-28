@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="2.2.4"
+VERSION="2.2.5"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 PKG_NAME="furcadia-native"
 STAGE_DIR="$ROOT_DIR/dist/${PKG_NAME}_${VERSION}_${ARCH}"

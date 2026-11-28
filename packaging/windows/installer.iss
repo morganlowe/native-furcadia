@@ -2,7 +2,7 @@
 ; Produces a single, trim Windows installer (.exe) with Start Menu integration.
 
 #define MyAppName "Furcadia Native Client"
-#define MyAppVersion "2.2.4"
+#define MyAppVersion "2.2.5"
 #define MyAppPublisher "Bear Built"
 #define MyAppURL "https://github.com/morganlowe/native-furcadia"
 #define MyAppExeName "furc-gui.exe"

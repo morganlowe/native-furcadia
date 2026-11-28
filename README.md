@@ -240,7 +240,7 @@ Local configuration is stored at `~/.config/furcadia-native/config.ini` on Linux
 
 ## Project status
 
-Release 2.2.4 builds on the 2.2.0 automatic stock patch download/caching, legacy floor/path tile rendering, RPM, and Apple Silicon macOS `.dmg` foundation (and Milestone 2.0 stability, security, and open-source baseline) with app-owned exact panel sizes, explicit resize handles, left sidebar layout fixes, a multi-character close confirmation dialog, crisp system UI fonts & tab typography fixes, and 112 passing unit tests.
+Release 2.2.5 builds on the 2.2.0 automatic stock patch download/caching, legacy floor/path tile rendering, RPM, and Apple Silicon macOS `.dmg` foundation (and Milestone 2.0 stability, security, and open-source baseline) with app-owned exact panel sizes, explicit resize handles, left sidebar layout fixes, a multi-character close confirmation dialog, crisp system UI fonts & leveled tab bar alignment fixes, and 112 passing unit tests.
 
 This is an independent, actively developed client. Some behavior and asset support may differ from the official Windows client, and compatibility can vary across dreams and custom patches. Please report reproducible bugs or feature requests on [GitHub Issues](https://github.com/morganlowe/native-furcadia/issues) with your OS and relevant log output (never attach passwords or private credentials).
 

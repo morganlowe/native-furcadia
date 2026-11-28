@@ -121,9 +121,9 @@ jobs:
         with:
           overwrite_files: true
           make_latest: true
-          name: "Furcadia Native Client v2.2.4 — Crisp System UI Fonts & Tab Typography"
+          name: "Furcadia Native Client v2.2.5 — Leveled Chat & Whisper Tabs"
           body: |
-            ## Furcadia Native Client v2.2.4 — Crisp System UI Fonts & Tab Typography
+            ## Furcadia Native Client v2.2.5 — Leveled Chat & Whisper Tabs
 
             A fast, standalone native Rust client for Furcadia supporting **Linux**, **Windows**, and **macOS** — no Wine or pre-existing Furcadia installation required.
 
@@ -134,15 +134,15 @@ jobs:
             - Multi-character reorderable tabs, per-character cookie counts, Pounce friend watchlist, Saved Dreams, shared/per-device logs, and cloud folder sync (Nextcloud, Drive, Dropbox)
             - Native Linux desktop & system tray alert blinking (`StatusNotifierItem`), Windows installer, Fedora/RHEL/openSUSE RPM packages, and Apple Silicon macOS `.dmg` builds
 
-            ### What's New in v2.2.4
-            - **Crisp System UI Fonts (`Regular` + `Bold`) & Fallbacks**:
-              - Discovers paired regular and bold static SFNT system UI fonts (Noto Sans / Liberation Sans / DejaVu Sans / Ubuntu Regular / Inter with `fc-match` fallback on Linux; Segoe UI / Arial / Tahoma on Windows; Arial / Verdana on macOS) with SFNT validation and preserved `Ubuntu-Light` / emoji / symbol fallbacks (fixing `Ubuntu-Light`'s thin/wonky glyphs and `●`/`─` missing-glyph boxes, plus preserving fallbacks for `Fixedsys`).
-            - **Tab Readability & Typography Fixes**:
-              - Uses crisp integer sizes across `TextStyle` (`Button` matching `Body` instead of fractional `sz - 0.5`), real bold font weights for active/unread tabs, `Mentions: ON`, headings, and `<b>` chat spans, generous tab padding, dynamic tab strip / Pounce row / Saved Dreams heights, and eliminates fractional `.size(*.5)` UI literals.
+            ### What's New in v2.2.5
+            - **Leveled Chat & Whisper Tab Bar**:
+              - Fixed vertical stair-stepping across `Main Chat` and whisper tabs (`×` close buttons included) caused by nested `ui.horizontal` layouts in egui.
+              - Unified regular/bold tab row height and `interact_size.y` so active, inactive, and unread tabs align cleanly on the same baseline while preserving tight `2px` tab-to-close spacing, `6px` inter-tab spacing, and drag-to-reorder.
 
             <details>
-            <summary><strong>Previous Releases Recap (v2.2.3, v2.2.2, v2.2.1, v2.2.0, v2.1.x &amp; Milestone 2.0)</strong></summary>
+            <summary><strong>Previous Releases Recap (v2.2.4, v2.2.3, v2.2.2, v2.2.1, v2.2.0, v2.1.x &amp; Milestone 2.0)</strong></summary>
 
+            - **v2.2.4**: Added paired regular/bold system UI font discovery with SFNT validation and preserved fallbacks, integer `TextStyle` sizes, real bold weights for active/unread tabs and `<b>` chat spans, and dynamic tab/row heights.
             - **v2.2.3**: Added a multi-character close confirmation dialog before quitting with multiple character tabs open (`Close [name] Only`, `Close All ([names])`, or `Cancel`).
 
             - **v2.2.2**: Replaced egui's `.resizable(true)` `PanelState` feedback loop on **Pounce** and **Chat** with app-owned exact sizes and explicit 5px drag handles, preserved panel sizes across Windows minimize/restore, prevented `chat_scroll` from pushing the input row outside `chat_panel` at minimum height, and wrapped the Log Viewer character selector.
@@ -158,34 +158,34 @@ jobs:
             ### Download & Install
 
             #### Arch Linux / CachyOS / Manjaro / EndeavourOS
-            Download `furcadia-native-2.2.4-1-x86_64.pkg.tar.zst` from the assets below and install with:
+            Download `furcadia-native-2.2.5-1-x86_64.pkg.tar.zst` from the assets below and install with:
             ```sh
-            sudo pacman -U ./furcadia-native-2.2.4-1-x86_64.pkg.tar.zst
+            sudo pacman -U ./furcadia-native-2.2.5-1-x86_64.pkg.tar.zst
             ```
 
             #### Debian / Ubuntu / Linux Mint
-            Download `furcadia-native_2.2.4_amd64.deb` from the assets below and install with:
+            Download `furcadia-native_2.2.5_amd64.deb` from the assets below and install with:
             ```sh
-            sudo apt install ./furcadia-native_2.2.4_amd64.deb
+            sudo apt install ./furcadia-native_2.2.5_amd64.deb
             ```
             *(Or double-click the `.deb` file to open it in your graphical software installer.)*
 
             #### Fedora / RHEL / Rocky / AlmaLinux / openSUSE (RPM)
-            Download `furcadia-native-2.2.4-1.*.x86_64.rpm` from the assets below and install with:
+            Download `furcadia-native-2.2.5-1.*.x86_64.rpm` from the assets below and install with:
             ```sh
             # Fedora / RHEL / Rocky / AlmaLinux
-            sudo dnf install ./furcadia-native-2.2.4-1*.x86_64.rpm
+            sudo dnf install ./furcadia-native-2.2.5-1*.x86_64.rpm
 
             # openSUSE
-            sudo zypper install --allow-unsigned-rpm ./furcadia-native-2.2.4-1*.x86_64.rpm
+            sudo zypper install --allow-unsigned-rpm ./furcadia-native-2.2.5-1*.x86_64.rpm
             ```
 
             #### Windows (64-bit)
-            1. Download `FurcadiaNative-Setup-2.2.4-x86_64.exe` from the assets below.
+            1. Download `FurcadiaNative-Setup-2.2.5-x86_64.exe` from the assets below.
             2. Run the installer. It installs both `furc-gui` and `furc-cli`, creates a **Furcadia Native Client** Start Menu shortcut, and registers an uninstaller in **Apps & Features**.
 
             #### macOS (Apple Silicon)
-            1. Download `FurcadiaNative-2.2.4-macos-arm64.dmg` from the assets below and open it.
+            1. Download `FurcadiaNative-2.2.5-macos-arm64.dmg` from the assets below and open it.
             2. Drag **Furcadia Native Client** to **Applications** (the CLI binary `furc-cli` is also bundled inside `Contents/MacOS/`).
             3. Because the app is ad-hoc signed without an Apple Developer notarization certificate, clear the quarantine attribute before first launch if Gatekeeper blocks it:
                ```sh
@@ -217,14 +217,14 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y build-essential dpkg-dev pkg-config libssl-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev curl bzip2 unzip
             ./packaging/debian/build-deb.sh
-            sudo apt install ./dist/furcadia-native_2.2.4_amd64.deb
+            sudo apt install ./dist/furcadia-native_2.2.5_amd64.deb
             ```
 
             #### Fedora / RHEL / openSUSE (`.rpm`)
             ```sh
             sudo dnf install -y rpm-build gcc gcc-c++ make perl-core pkgconf-pkg-config libxcb-devel libxkbcommon-devel libX11-devel mesa-libGL-devel curl bzip2 unzip
             ./packaging/rpm/build-rpm.sh
-            sudo dnf install ./dist/furcadia-native-2.2.4-1*.x86_64.rpm
+            sudo dnf install ./dist/furcadia-native-2.2.5-1*.x86_64.rpm
             ```
 
             #### Windows (Inno Setup `.exe`)
@@ -232,14 +232,14 @@ jobs:
             ```powershell
             cargo build --release --locked --bins
             & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\windows\installer.iss
-            # Output: dist\FurcadiaNative-Setup-2.2.4-x86_64.exe
+            # Output: dist\FurcadiaNative-Setup-2.2.5-x86_64.exe
             ```
 
             #### macOS (`.dmg`)
             Requires Xcode Command Line Tools (`xcode-select --install`) and Rust:
             ```sh
             ./packaging/macos/build-dmg.sh
-            # Output: dist/FurcadiaNative-2.2.4-macos-$(uname -m).dmg
+            # Output: dist/FurcadiaNative-2.2.5-macos-$(uname -m).dmg
             ```
 
             #### Generic Binary Build (Any OS)

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="2.2.4"
+VERSION="2.2.5"
 PKG_NAME="furcadia-native"
 RPM_TOPDIR="$ROOT_DIR/dist/rpmbuild"
 

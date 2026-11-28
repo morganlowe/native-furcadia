@@ -1,6 +1,6 @@
 [package]
 name = "furcadia-client"
-version = "2.2.4"
+version = "2.2.5"
 edition = "2021"
 description = "Native Linux & cross-platform Furcadia client core library, CLI, and GUI"
 license = "CC-BY-NC-SA-4.0"

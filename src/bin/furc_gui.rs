@@ -12332,8 +12332,12 @@ fn render_log_viewer_window(&mut self, ctx: &egui::Context) {
                     ui.spacing_mut().scroll.floating = false;
                     ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    let tab_text_h = ui.fonts(|f| f.row_height(&tab_regular_font));
+                    let tab_text_h = ui.fonts(|f| {
+                        f.row_height(&tab_regular_font)
+                            .max(f.row_height(&tab_bold_font))
+                    });
                     let tab_btn_h = (tab_text_h + 10.0).max(24.0).ceil();
+                    ui.spacing_mut().interact_size.y = tab_btn_h;
                     let scroll_bar_h = ui.spacing().scroll.bar_width
                         + ui.spacing().scroll.bar_inner_margin
                         + ui.spacing().scroll.bar_outer_margin;
@@ -12410,74 +12414,73 @@ fn render_log_viewer_window(&mut self, ctx: &egui::Context) {
                                         } else {
                                             name_display_clean(&w.peer)
                                         };
-                                        ui.horizontal(|ui| {
-                                            ui.spacing_mut().item_spacing.x = 2.0;
-                                            let resp = if !sel && w.unread > 0 {
-                                                ui.add(
-                                                    egui::Button::new(
-                                                        RichText::new(label)
-                                                            .font(tab_bold_font.clone())
-                                                            .strong()
-                                                            .color(self.colors.tab_unread_text),
-                                                    )
-                                                    .fill(self.colors.tab_unread_bg)
-                                                    .stroke(Stroke::new(
-                                                        1.5_f32,
-                                                        self.colors.tab_unread_bg,
-                                                    ))
-                                                    .rounding(4.0)
-                                                    .min_size(Vec2::new(0.0, tab_btn_h))
-                                                    .sense(Sense::click_and_drag()),
+                                        ui.spacing_mut().item_spacing.x = 2.0;
+                                        let resp = if !sel && w.unread > 0 {
+                                            ui.add(
+                                                egui::Button::new(
+                                                    RichText::new(label)
+                                                        .font(tab_bold_font.clone())
+                                                        .strong()
+                                                        .color(self.colors.tab_unread_text),
                                                 )
-                                            } else if sel {
-                                                ui.add(
-                                                    egui::Button::new(
-                                                        RichText::new(label)
-                                                            .font(tab_bold_font.clone())
-                                                            .strong()
-                                                            .color(self.colors.tab_active_text),
-                                                    )
-                                                    .fill(self.colors.tab_active_bg)
-                                                    .rounding(4.0)
-                                                    .min_size(Vec2::new(0.0, tab_btn_h))
-                                                    .sense(Sense::click_and_drag()),
+                                                .fill(self.colors.tab_unread_bg)
+                                                .stroke(Stroke::new(
+                                                    1.5_f32,
+                                                    self.colors.tab_unread_bg,
+                                                ))
+                                                .rounding(4.0)
+                                                .min_size(Vec2::new(0.0, tab_btn_h))
+                                                .sense(Sense::click_and_drag()),
+                                            )
+                                        } else if sel {
+                                            ui.add(
+                                                egui::Button::new(
+                                                    RichText::new(label)
+                                                        .font(tab_bold_font.clone())
+                                                        .strong()
+                                                        .color(self.colors.tab_active_text),
                                                 )
-                                            } else {
-                                                ui.add(
-                                                    egui::Button::new(
-                                                        RichText::new(label)
-                                                            .font(tab_regular_font.clone())
-                                                            .color(self.colors.tab_inactive_text),
-                                                    )
-                                                    .fill(self.colors.tab_inactive_bg)
-                                                    .rounding(4.0)
-                                                    .min_size(Vec2::new(0.0, tab_btn_h))
-                                                    .sense(Sense::click_and_drag()),
+                                                .fill(self.colors.tab_active_bg)
+                                                .rounding(4.0)
+                                                .min_size(Vec2::new(0.0, tab_btn_h))
+                                                .sense(Sense::click_and_drag()),
+                                            )
+                                        } else {
+                                            ui.add(
+                                                egui::Button::new(
+                                                    RichText::new(label)
+                                                        .font(tab_regular_font.clone())
+                                                        .color(self.colors.tab_inactive_text),
                                                 )
-                                            };
-                                            if resp.drag_started() {
-                                                self.dragging_whisper_tab = Some(idx);
-                                            } else if resp.clicked() {
-                                                w.unread = 0;
-                                                activate_peer = Some(w.peer.clone());
-                                                self.focus_chat_input = true;
-                                            }
-                                            whisper_tab_rects.push((idx, resp.rect));
-                                            if ui
-                                                .add(
-                                                    egui::Button::new(
-                                                        RichText::new("×")
-                                                            .font(tab_regular_font.clone()),
-                                                    )
-                                                    .rounding(4.0)
-                                                    .min_size(Vec2::new(22.0, tab_btn_h)),
+                                                .fill(self.colors.tab_inactive_bg)
+                                                .rounding(4.0)
+                                                .min_size(Vec2::new(0.0, tab_btn_h))
+                                                .sense(Sense::click_and_drag()),
+                                            )
+                                        };
+                                        if resp.drag_started() {
+                                            self.dragging_whisper_tab = Some(idx);
+                                        } else if resp.clicked() {
+                                            w.unread = 0;
+                                            activate_peer = Some(w.peer.clone());
+                                            self.focus_chat_input = true;
+                                        }
+                                        whisper_tab_rects.push((idx, resp.rect));
+                                        ui.spacing_mut().item_spacing.x = 6.0;
+                                        if ui
+                                            .add(
+                                                egui::Button::new(
+                                                    RichText::new("×")
+                                                        .font(tab_regular_font.clone()),
                                                 )
-                                                .on_hover_text("Close tab")
-                                                .clicked()
-                                            {
-                                                close_peer = Some(w.peer.clone());
-                                            }
-                                        });
+                                                .rounding(4.0)
+                                                .min_size(Vec2::new(22.0, tab_btn_h)),
+                                            )
+                                            .on_hover_text("Close tab")
+                                            .clicked()
+                                        {
+                                            close_peer = Some(w.peer.clone());
+                                        }
                                     }
                                     if let Some(peer) = activate_peer {
                                         self.switch_chat_tab(Some(peer));
