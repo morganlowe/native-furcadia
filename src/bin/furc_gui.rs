@@ -641,6 +641,8 @@ struct WhisperSession {
     input: String,
     unread: usize,
     detached: bool,
+    looked_card: Option<LookedPlayerCard>,
+    portrait_fetched: bool,
 }
 
 impl WhisperSession {
@@ -652,6 +654,8 @@ impl WhisperSession {
             input: String::new(),
             unread: 0,
             detached: false,
+            looked_card: None,
+            portrait_fetched: false,
         }
     }
 }
@@ -795,6 +799,14 @@ struct LookedPlayerCard {
     portrait_tex: Option<TextureHandle>,
     badge_tex: Option<TextureHandle>,
     resolved_for: Option<(u16, u8, [u8; 12])>,
+}
+
+#[derive(Clone)]
+struct SilentTabGlook {
+    target_key: String,
+    sent_at: Instant,
+    card_received: bool,
+    saw_you_see: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -2067,6 +2079,8 @@ struct BackgroundSession {
     unread_count: usize,
     cookies_collected: Option<u32>,
     cookies_total: Option<u32>,
+    looked_player: Option<LookedPlayerCard>,
+    main_looked_player: Option<LookedPlayerCard>,
     to_net: Sender<UiToNet>,
     from_net: Receiver<NetToUi>,
 }
@@ -2184,9 +2198,12 @@ struct FurcadiaApp {
     pending_dream_total_bytes: Option<u64>,
     pending_dream_stage: String,
     looked_player: Option<LookedPlayerCard>,
+    main_looked_player: Option<LookedPlayerCard>,
+    known_player_cards: HashMap<String, LookedPlayerCard>,
     trade_item_input: String,
     trade_reason_input: String,
     pending_glook_target: Option<(String, Instant)>,
+    pending_silent_tab_glooks: Vec<SilentTabGlook>,
     recent_portrait_target: Option<(String, Instant)>,
     silent_self_glook: bool,
     hovered_avatar_uid: Option<u32>,
@@ -2573,9 +2590,12 @@ impl FurcadiaApp {
             pending_dream_total_bytes: None,
             pending_dream_stage: String::new(),
             looked_player: None,
+            main_looked_player: None,
+            known_player_cards: HashMap::new(),
             trade_item_input: String::new(),
             trade_reason_input: String::new(),
             pending_glook_target: None,
+            pending_silent_tab_glooks: Vec::new(),
             recent_portrait_target: None,
             silent_self_glook: false,
             hovered_avatar_uid: None,
@@ -3425,9 +3445,7 @@ impl FurcadiaApp {
             self.reload_base_patch_caches();
             self.species_caches.clear();
             self.char_portraits.clear();
-            if let Some(card) = self.looked_player.as_mut() {
-                card.resolved_for = None;
-            }
+            self.invalidate_looked_card_textures();
         }
         for name in &summary.pounce_added {
             let wire = wire_player_name(name);
@@ -3466,9 +3484,7 @@ impl FurcadiaApp {
         self.pending_portrait_downloads.clear();
         self.chat_img_textures.clear();
         self.pending_chat_img_downloads.clear();
-        if let Some(card) = self.looked_player.as_mut() {
-            card.resolved_for = None;
-        }
+        self.invalidate_looked_card_textures();
         // Re-request portraits for everyone we already know about.
         let pids: Vec<u32> = self.player_portrait_ids.values().copied().collect();
         for pid in pids {
@@ -3733,6 +3749,9 @@ impl FurcadiaApp {
         let old_cam = std::mem::replace(&mut self.cam_offset, Vec2::ZERO);
         let old_cookies_collected = self.cookies_collected.take();
         let old_cookies_total = self.cookies_total.take();
+        let old_looked_player = self.looked_player.take();
+        let old_main_looked_player = self.main_looked_player.take();
+        self.pending_silent_tab_glooks.clear();
         let char_name = old_world
             .self_name
             .clone()
@@ -3760,6 +3779,8 @@ impl FurcadiaApp {
                 unread_count: 0,
                 cookies_collected: old_cookies_collected,
                 cookies_total: old_cookies_total,
+                looked_player: old_looked_player,
+                main_looked_player: old_main_looked_player,
                 to_net: old_to_net,
                 from_net: old_from_net,
             },
@@ -3847,9 +3868,14 @@ impl FurcadiaApp {
         self.cam_offset = target.cam_offset;
         self.to_net = target.to_net;
         self.from_net = target.from_net;
-        self.looked_player = None;
+        self.looked_player = target.looked_player;
+        self.main_looked_player = target.main_looked_player;
+        self.pending_silent_tab_glooks.clear();
         self.recent_portrait_target = None;
         self.context_menu_avatar = None;
+        if self.active_chat_tab.is_some() && self.looked_player.is_none() {
+            self.sync_portrait_for_active_chat_tab();
+        }
         self.screen = AppScreen::InGame;
     }
 
@@ -4100,6 +4126,11 @@ impl FurcadiaApp {
         self.chat_pinned_to_bottom = true;
         self.chat_scroll_to_bottom = true;
         self.looked_player = None;
+        self.main_looked_player = None;
+        self.pending_silent_tab_glooks.clear();
+        for w in &mut self.whispers {
+            w.portrait_fetched = false;
+        }
         self.recent_portrait_target = None;
         self.hovered_avatar_uid = None;
         self.context_menu_avatar = None;
@@ -4138,6 +4169,10 @@ impl FurcadiaApp {
         }
         self.reconnecting = true;
         self.pending_whisper_echoes.clear();
+        self.pending_silent_tab_glooks.clear();
+        for w in &mut self.whispers {
+            w.portrait_fetched = false;
+        }
         self.pending_vascodagama = false;
         self.login_ack_at = None;
         self.pending_dream_name = None;
@@ -4741,9 +4776,7 @@ impl FurcadiaApp {
         }
         if changed {
             self.char_portraits.clear();
-            if let Some(card) = self.looked_player.as_mut() {
-                card.resolved_for = None;
-            }
+            self.invalidate_looked_card_textures();
         }
     }
 
@@ -4849,14 +4882,26 @@ impl FurcadiaApp {
                 if is_account_char && prev != Some(pid) {
                     self.save_config();
                 }
-            }
-        }
-        if let Some(card) = self.looked_player.as_mut() {
-            if target_name
-                .as_deref()
-                .is_some_and(|n| shortname_key(n) == shortname_key(&card.short_name))
-            {
-                card.portrait_id = Some(pid);
+                if let Some(card) = self.looked_player.as_mut() {
+                    if shortname_key(&card.short_name) == key {
+                        card.portrait_id = Some(pid);
+                    }
+                }
+                if let Some(card) = self.main_looked_player.as_mut() {
+                    if shortname_key(&card.short_name) == key {
+                        card.portrait_id = Some(pid);
+                    }
+                }
+                if let Some(card) = self.known_player_cards.get_mut(&key) {
+                    card.portrait_id = Some(pid);
+                }
+                for w in &mut self.whispers {
+                    if let Some(card) = w.looked_card.as_mut() {
+                        if shortname_key(&card.short_name) == key {
+                            card.portrait_id = Some(pid);
+                        }
+                    }
+                }
             }
         }
         if pending_target
@@ -4875,6 +4920,90 @@ impl FurcadiaApp {
             && self.pending_portrait_downloads.insert(pid)
         {
             let _ = self.to_net.send(UiToNet::DownloadPortrait { portrait_id: pid });
+        }
+    }
+
+    fn invalidate_looked_card_textures(&mut self) {
+        if let Some(card) = self.looked_player.as_mut() {
+            card.resolved_for = None;
+        }
+        if let Some(card) = self.main_looked_player.as_mut() {
+            card.resolved_for = None;
+        }
+        for card in self.known_player_cards.values_mut() {
+            card.resolved_for = None;
+        }
+        for w in &mut self.whispers {
+            if let Some(card) = w.looked_card.as_mut() {
+                card.resolved_for = None;
+            }
+        }
+        for sess in &mut self.bg_sessions {
+            if let Some(card) = sess.looked_player.as_mut() {
+                card.resolved_for = None;
+            }
+            if let Some(card) = sess.main_looked_player.as_mut() {
+                card.resolved_for = None;
+            }
+            for w in &mut sess.whispers {
+                if let Some(card) = w.looked_card.as_mut() {
+                    card.resolved_for = None;
+                }
+            }
+        }
+    }
+
+    fn request_silent_whisper_glook(&mut self, peer: &str) {
+        if !self.is_connected {
+            return;
+        }
+        let target = wire_player_name(peer);
+        let key = shortname_key(&target);
+        if key.is_empty() {
+            return;
+        }
+        self.pending_silent_tab_glooks
+            .retain(|e| e.sent_at.elapsed() <= Duration::from_secs(5));
+        if self
+            .pending_silent_tab_glooks
+            .iter()
+            .any(|e| e.target_key == key)
+        {
+            return;
+        }
+        if self.pending_silent_tab_glooks.len() >= 8 {
+            self.pending_silent_tab_glooks.remove(0);
+        }
+        self.pending_silent_tab_glooks.push(SilentTabGlook {
+            target_key: key,
+            sent_at: Instant::now(),
+            card_received: false,
+            saw_you_see: false,
+        });
+        self.pending_glook_target = Some((target.clone(), Instant::now()));
+        let _ = self.to_net.send(UiToNet::Send(ClientCommand::Glook(target)));
+    }
+
+    fn sync_portrait_for_active_chat_tab(&mut self) {
+        let glook_peer = sync_tab_portrait_state(
+            self.active_chat_tab.as_deref(),
+            self.is_connected,
+            &mut self.looked_player,
+            &mut self.main_looked_player,
+            &mut self.whispers,
+            &self.known_player_cards,
+            &self.player_portrait_ids,
+            &self.world.avatars,
+        );
+        if let Some(peer) = glook_peer {
+            self.request_silent_whisper_glook(&peer);
+        }
+        if let Some(pid) = self.looked_player.as_ref().and_then(|c| c.portrait_id) {
+            if !self.custom_portrait_rgba.contains_key(&pid)
+                && self.pending_portrait_downloads.insert(pid)
+            {
+                let _ = self.to_net.send(UiToNet::DownloadPortrait { portrait_id: pid });
+            }
         }
     }
 
@@ -6644,9 +6773,7 @@ impl FurcadiaApp {
                         if cache.is_loaded() {
                             self.species_caches.insert(file_id, cache);
                             self.char_portraits.clear();
-                            if let Some(card) = self.looked_player.as_mut() {
-                                card.resolved_for = None;
-                            }
+                            self.invalidate_looked_card_textures();
                         }
                     }
                 }
@@ -6726,7 +6853,19 @@ impl FurcadiaApp {
             _ => false,
         };
         if same_tab {
+            if let Some(peer) = target.as_deref() {
+                let current_key = self
+                    .looked_player
+                    .as_ref()
+                    .map(|c| shortname_key(&c.short_name));
+                if current_key.as_deref() != Some(shortname_key(peer).as_str()) {
+                    self.sync_portrait_for_active_chat_tab();
+                }
+            }
             return;
+        }
+        if self.active_chat_tab.is_none() {
+            self.main_looked_player = self.looked_player.clone();
         }
         self.save_active_chat_draft();
         self.active_chat_tab = target;
@@ -6736,6 +6875,7 @@ impl FurcadiaApp {
         self.spell_seq = self.spell_seq.wrapping_add(1);
         self.spell_dirty_at = None;
         self.spell_misspelled.clear();
+        self.sync_portrait_for_active_chat_tab();
     }
 
     fn open_whisper_tab(&mut self, peer: &str, focus: bool) -> usize {
@@ -6860,6 +7000,13 @@ impl FurcadiaApp {
                     }
                     self.last_received_whisper_from = peer;
                 } else {
+                    if should_suppress_silent_tab_glook_text(
+                        &mut self.pending_silent_tab_glooks,
+                        &plain,
+                        Instant::now(),
+                    ) {
+                        return;
+                    }
                     let me = self.active_character_name();
                     let mut flashed = false;
                     if self.notify_mention {
@@ -7095,14 +7242,24 @@ impl FurcadiaApp {
                                     .player_portrait_ids
                                     .get(&short_key)
                                     .copied();
-                                self.looked_player = Some(LookedPlayerCard {
+                                let card = LookedPlayerCard {
                                     info,
                                     short_name,
                                     portrait_id,
                                     portrait_tex: None,
                                     badge_tex: None,
                                     resolved_for: None,
-                                });
+                                };
+                                apply_looked_card_to_tabs(
+                                    card,
+                                    self.active_chat_tab.as_deref(),
+                                    &mut self.looked_player,
+                                    &mut self.main_looked_player,
+                                    &mut self.whispers,
+                                    &mut self.known_player_cards,
+                                    &mut self.pending_silent_tab_glooks,
+                                    Instant::now(),
+                                );
                             }
                         }
                     }
@@ -7262,6 +7419,9 @@ impl FurcadiaApp {
             _ => None,
         };
         if let Some(target) = glook_target {
+            let target_key = shortname_key(&target);
+            self.pending_silent_tab_glooks
+                .retain(|e| e.target_key != target_key);
             self.silent_self_glook = false;
             self.pending_glook_target = Some((target, Instant::now()));
         }
@@ -10065,6 +10225,9 @@ fn render_log_viewer_window(&mut self, ctx: &egui::Context) {
         if target.is_empty() {
             return;
         }
+        let target_key = shortname_key(&target);
+        self.pending_silent_tab_glooks
+            .retain(|e| e.target_key != target_key);
         self.silent_self_glook = false;
         self.pending_glook_target = Some((target.clone(), Instant::now()));
         let _ = self.to_net.send(UiToNet::Send(ClientCommand::Glook(target)));
@@ -14681,6 +14844,9 @@ Light: {} | Amb: {} | Elev: {:?}",
         if close_card {
             self.looked_player = None;
             self.recent_portrait_target = None;
+            if self.active_chat_tab.is_none() {
+                self.main_looked_player = None;
+            }
         }
     }
 
@@ -15772,6 +15938,194 @@ fn parse_portrait_directive(raw: &str) -> (Option<u32>, Option<u32>, Option<Stri
 
     let name = (!name_parts.is_empty()).then(|| wire_player_name(&name_parts.join(" ")));
     (character_id, portrait_id, name)
+}
+
+fn should_suppress_silent_tab_glook_text(
+    pending: &mut Vec<SilentTabGlook>,
+    plain: &str,
+    now: Instant,
+) -> bool {
+    pending.retain(|e| now.saturating_duration_since(e.sent_at) <= Duration::from_secs(5));
+    let trimmed = plain.trim();
+    let seen_name = trimmed
+        .strip_prefix("(You see ")
+        .and_then(|s| s.split(".)").next())
+        .or_else(|| trimmed.strip_prefix("You see ").and_then(|s| s.split('.').next()));
+    if let Some(name) = seen_name {
+        let seen_key = shortname_key(name);
+        if !seen_key.is_empty() {
+            if let Some(entry) = pending.iter_mut().find(|e| e.target_key == seen_key) {
+                entry.saw_you_see = true;
+                return true;
+            }
+        }
+    } else if trimmed.starts_with("> ") {
+        if let Some(idx) = pending
+            .iter()
+            .rposition(|e| e.saw_you_see && now.saturating_duration_since(e.sent_at) <= Duration::from_secs(3))
+        {
+            pending[idx].saw_you_see = false;
+            if pending[idx].card_received {
+                pending.remove(idx);
+            }
+            return true;
+        }
+    }
+    false
+}
+
+fn cache_looked_player_card_into(
+    card: &LookedPlayerCard,
+    known_player_cards: &mut HashMap<String, LookedPlayerCard>,
+    whispers: &mut [WhisperSession],
+) {
+    let mut key = shortname_key(&card.short_name);
+    if key.is_empty() {
+        key = shortname_key(&card.info.name);
+    }
+    if key.is_empty() {
+        return;
+    }
+    if known_player_cards.len() >= MAX_CUSTOM_PORTRAITS && !known_player_cards.contains_key(&key) {
+        known_player_cards.clear();
+    }
+    known_player_cards.insert(key.clone(), card.clone());
+    for w in whispers {
+        if shortname_key(&w.peer) == key {
+            w.looked_card = Some(card.clone());
+            w.portrait_fetched = true;
+        }
+    }
+}
+
+fn resolve_whisper_peer_card_from_sources(
+    peer: &str,
+    whispers: &[WhisperSession],
+    known_player_cards: &HashMap<String, LookedPlayerCard>,
+    player_portrait_ids: &HashMap<String, u32>,
+    avatars: &std::collections::BTreeMap<u32, Avatar>,
+) -> Option<LookedPlayerCard> {
+    let peer_key = shortname_key(peer);
+    if peer_key.is_empty() {
+        return None;
+    }
+    let known_pid = player_portrait_ids.get(&peer_key).copied();
+    if let Some(mut card) = whispers
+        .iter()
+        .find(|w| w.peer.eq_ignore_ascii_case(peer) || shortname_key(&w.peer) == peer_key)
+        .and_then(|w| w.looked_card.clone())
+    {
+        card.portrait_id = known_pid.or(card.portrait_id);
+        return Some(card);
+    }
+    if let Some(mut card) = known_player_cards.get(&peer_key).cloned() {
+        card.portrait_id = known_pid.or(card.portrait_id);
+        return Some(card);
+    }
+    if let Some(av) = avatars
+        .values()
+        .find(|av| shortname_key(&av.name) == peer_key)
+    {
+        return Some(LookedPlayerCard {
+            info: LookedPlayerInfo {
+                name: av.name.clone(),
+                appearance: av.appearance.clone(),
+            },
+            short_name: wire_player_name(&av.name),
+            portrait_id: known_pid,
+            portrait_tex: None,
+            badge_tex: None,
+            resolved_for: None,
+        });
+    }
+    known_pid.map(|pid| LookedPlayerCard {
+        info: LookedPlayerInfo {
+            name: peer.replace('|', " "),
+            appearance: AvatarAppearance::default(),
+        },
+        short_name: wire_player_name(peer),
+        portrait_id: Some(pid),
+        portrait_tex: None,
+        badge_tex: None,
+        resolved_for: None,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sync_tab_portrait_state(
+    active_chat_tab: Option<&str>,
+    is_connected: bool,
+    looked_player: &mut Option<LookedPlayerCard>,
+    main_looked_player: &mut Option<LookedPlayerCard>,
+    whispers: &mut [WhisperSession],
+    known_player_cards: &HashMap<String, LookedPlayerCard>,
+    player_portrait_ids: &HashMap<String, u32>,
+    avatars: &std::collections::BTreeMap<u32, Avatar>,
+) -> Option<String> {
+    let Some(peer) = active_chat_tab else {
+        *looked_player = main_looked_player.clone();
+        if let Some(card) = looked_player.as_mut() {
+            if let Some(&pid) = player_portrait_ids.get(&shortname_key(&card.short_name)) {
+                card.portrait_id = Some(pid);
+            }
+        }
+        return None;
+    };
+
+    let peer_key = shortname_key(peer);
+    let resolved = resolve_whisper_peer_card_from_sources(
+        peer,
+        whispers,
+        known_player_cards,
+        player_portrait_ids,
+        avatars,
+    );
+    *looked_player = resolved.clone();
+    let has_server_card = known_player_cards.contains_key(&peer_key);
+    let mut should_fetch = false;
+    if let Some(w) = whispers
+        .iter_mut()
+        .find(|w| w.peer.eq_ignore_ascii_case(peer) || shortname_key(&w.peer) == peer_key)
+    {
+        if w.looked_card.is_none() && resolved.is_some() {
+            w.looked_card = resolved;
+        }
+        if has_server_card {
+            w.portrait_fetched = true;
+        } else if is_connected && !w.portrait_fetched {
+            w.portrait_fetched = true;
+            should_fetch = true;
+        }
+    }
+    should_fetch.then(|| peer.to_owned())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_looked_card_to_tabs(
+    card: LookedPlayerCard,
+    active_chat_tab: Option<&str>,
+    looked_player: &mut Option<LookedPlayerCard>,
+    main_looked_player: &mut Option<LookedPlayerCard>,
+    whispers: &mut [WhisperSession],
+    known_player_cards: &mut HashMap<String, LookedPlayerCard>,
+    pending_silent_tab_glooks: &mut Vec<SilentTabGlook>,
+    now: Instant,
+) {
+    let short_key = shortname_key(&card.short_name);
+    cache_looked_player_card_into(&card, known_player_cards, whispers);
+    pending_silent_tab_glooks.retain(|e| now.saturating_duration_since(e.sent_at) <= Duration::from_secs(5));
+    if let Some(entry) = pending_silent_tab_glooks
+        .iter_mut()
+        .find(|e| e.target_key == short_key && !e.card_received)
+    {
+        entry.card_received = true;
+        if active_chat_tab.is_some_and(|peer| shortname_key(peer) == short_key) {
+            *looked_player = Some(card);
+        }
+    } else {
+        *looked_player = Some(card.clone());
+        *main_looked_player = Some(card);
+    }
 }
 
 fn match_pending_whisper_echo(
@@ -18918,6 +19272,243 @@ mod tests {
         );
         // Empty name keys never match.
         assert_eq!(resolve_custom_portrait_id(&known, "", Some(257_927)), None);
+    }
+
+    #[test]
+    fn silent_tab_glook_text_suppression_only_hides_matching_look_and_desc() {
+        let t0 = Instant::now();
+        let mut pending = vec![SilentTabGlook {
+            target_key: "alice".to_owned(),
+            sent_at: t0,
+            card_received: true,
+            saw_you_see: false,
+        }];
+
+        // Unrelated speech before `(You see Alice.)` is not suppressed.
+        assert!(!should_suppress_silent_tab_glook_text(&mut pending, "Bob: hello", t0));
+        // Another player's look line is not suppressed.
+        assert!(!should_suppress_silent_tab_glook_text(&mut pending, "(You see Bob.)", t0));
+        // Matching `(You see Alice.)` and its immediate `> ` description line are suppressed.
+        assert!(should_suppress_silent_tab_glook_text(&mut pending, "(You see Alice.)", t0));
+        assert!(should_suppress_silent_tab_glook_text(&mut pending, "> A tall fox.", t0));
+        // Entry is removed once both `card_received` and `> ` desc are consumed; a second `> ` line is shown.
+        assert!(pending.is_empty());
+        assert!(!should_suppress_silent_tab_glook_text(&mut pending, "> Normal speech.", t0));
+
+        // Expired (>5s) entries are pruned and never suppress.
+        let mut expired = vec![SilentTabGlook {
+            target_key: "alice".to_owned(),
+            sent_at: t0,
+            card_received: false,
+            saw_you_see: false,
+        }];
+        let t_late = t0 + Duration::from_secs(6);
+        assert!(!should_suppress_silent_tab_glook_text(
+            &mut expired,
+            "(You see Alice.)",
+            t_late
+        ));
+        assert!(expired.is_empty());
+    }
+
+    #[test]
+    fn resolve_and_switch_tab_portraits() {
+        let make_card = |name: &str, pid: Option<u32>| LookedPlayerCard {
+            info: LookedPlayerInfo {
+                name: name.to_owned(),
+                appearance: AvatarAppearance::default(),
+            },
+            short_name: wire_player_name(name),
+            portrait_id: pid,
+            portrait_tex: None,
+            badge_tex: None,
+            resolved_for: None,
+        };
+
+        let mut active_chat_tab: Option<String> = None;
+        let charlie = make_card("Charlie", Some(101));
+        let mut looked_player = Some(charlie.clone());
+        let mut main_looked_player = Some(charlie);
+        let mut known_player_cards = HashMap::new();
+        let player_portrait_ids = HashMap::new();
+        let avatars = std::collections::BTreeMap::new();
+        let mut whispers = vec![
+            WhisperSession::new("Alice".to_owned()),
+            WhisperSession::new("Bob".to_owned()),
+        ];
+        cache_looked_player_card_into(
+            &make_card("Alice", Some(201)),
+            &mut known_player_cards,
+            &mut whispers,
+        );
+        cache_looked_player_card_into(
+            &make_card("Bob", Some(202)),
+            &mut known_player_cards,
+            &mut whispers,
+        );
+
+        let switch_tab = |target: Option<&str>,
+                          active_tab: &mut Option<String>,
+                          looked: &mut Option<LookedPlayerCard>,
+                          main_looked: &mut Option<LookedPlayerCard>,
+                          whispers: &mut [WhisperSession],
+                          known: &HashMap<String, LookedPlayerCard>| {
+            let same = match (active_tab.as_deref(), target) {
+                (None, None) => true,
+                (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+                _ => false,
+            };
+            if same {
+                if let Some(peer) = target {
+                    let cur_key = looked.as_ref().map(|c| shortname_key(&c.short_name));
+                    if cur_key.as_deref() != Some(shortname_key(peer).as_str()) {
+                        sync_tab_portrait_state(
+                            active_tab.as_deref(),
+                            false,
+                            looked,
+                            main_looked,
+                            whispers,
+                            known,
+                            &player_portrait_ids,
+                            &avatars,
+                        );
+                    }
+                }
+                return;
+            }
+            if active_tab.is_none() {
+                *main_looked = looked.clone();
+            }
+            *active_tab = target.map(str::to_owned);
+            sync_tab_portrait_state(
+                active_tab.as_deref(),
+                false,
+                looked,
+                main_looked,
+                whispers,
+                known,
+                &player_portrait_ids,
+                &avatars,
+            );
+        };
+
+        // Main -> Whisper Alice shows Alice's portrait.
+        switch_tab(
+            Some("Alice"),
+            &mut active_chat_tab,
+            &mut looked_player,
+            &mut main_looked_player,
+            &mut whispers,
+            &known_player_cards,
+        );
+        assert_eq!(
+            looked_player.as_ref().map(|c| c.short_name.as_str()),
+            Some("Alice")
+        );
+        assert_eq!(looked_player.as_ref().and_then(|c| c.portrait_id), Some(201));
+
+        // Whisper Alice -> Whisper Bob shows Bob's portrait.
+        switch_tab(
+            Some("Bob"),
+            &mut active_chat_tab,
+            &mut looked_player,
+            &mut main_looked_player,
+            &mut whispers,
+            &known_player_cards,
+        );
+        assert_eq!(
+            looked_player.as_ref().map(|c| c.short_name.as_str()),
+            Some("Bob")
+        );
+
+        // Whisper Bob -> Main restores Charlie.
+        switch_tab(
+            None,
+            &mut active_chat_tab,
+            &mut looked_player,
+            &mut main_looked_player,
+            &mut whispers,
+            &known_player_cards,
+        );
+        assert_eq!(
+            looked_player.as_ref().map(|c| c.short_name.as_str()),
+            Some("Charlie")
+        );
+
+        // Dismiss on Main clears Main's remembered card, then Whisper Alice -> Main stays None.
+        looked_player = None;
+        main_looked_player = None;
+        switch_tab(
+            Some("Alice"),
+            &mut active_chat_tab,
+            &mut looked_player,
+            &mut main_looked_player,
+            &mut whispers,
+            &known_player_cards,
+        );
+        assert_eq!(
+            looked_player.as_ref().map(|c| c.short_name.as_str()),
+            Some("Alice")
+        );
+        switch_tab(
+            None,
+            &mut active_chat_tab,
+            &mut looked_player,
+            &mut main_looked_player,
+            &mut whispers,
+            &known_player_cards,
+        );
+        assert!(looked_player.is_none());
+
+        // Explicit look for Dave while on Whisper Alice updates Main's remembered card without
+        // overwriting Alice's stored whisper card; re-clicking Alice snaps back to Alice.
+        switch_tab(
+            Some("Alice"),
+            &mut active_chat_tab,
+            &mut looked_player,
+            &mut main_looked_player,
+            &mut whispers,
+            &known_player_cards,
+        );
+        let mut pending = Vec::new();
+        apply_looked_card_to_tabs(
+            make_card("Dave", Some(303)),
+            active_chat_tab.as_deref(),
+            &mut looked_player,
+            &mut main_looked_player,
+            &mut whispers,
+            &mut known_player_cards,
+            &mut pending,
+            Instant::now(),
+        );
+        assert_eq!(
+            looked_player.as_ref().map(|c| c.short_name.as_str()),
+            Some("Dave")
+        );
+        switch_tab(
+            Some("Alice"),
+            &mut active_chat_tab,
+            &mut looked_player,
+            &mut main_looked_player,
+            &mut whispers,
+            &known_player_cards,
+        );
+        assert_eq!(
+            looked_player.as_ref().map(|c| c.short_name.as_str()),
+            Some("Alice")
+        );
+        switch_tab(
+            None,
+            &mut active_chat_tab,
+            &mut looked_player,
+            &mut main_looked_player,
+            &mut whispers,
+            &known_player_cards,
+        );
+        assert_eq!(
+            looked_player.as_ref().map(|c| c.short_name.as_str()),
+            Some("Dave")
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="2.2.5"
+VERSION="2.2.6"
 APP_NAME="Furcadia Native Client"
 ARCH="$(uname -m)"
 DMG_STAGE="$ROOT_DIR/dist/macos-dmg-stage"

@@ -1,6 +1,6 @@
 # Maintainer: Morgan Lowe <https://github.com/morganlowe/native-furcadia>
 pkgname=furcadia-native
-pkgver=2.2.5
+pkgver=2.2.6
 pkgrel=1
 pkgdesc="Native Furcadia client (GUI and CLI)"
 arch=('x86_64')
